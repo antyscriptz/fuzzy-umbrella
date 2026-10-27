@@ -1,0 +1,57 @@
+workflows:
+  antys-save-editor-unsigned-ios:
+    name: Anty's Save Editor — unsigned iOS build
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    environment:
+      xcode: latest
+    scripts:
+      - name: Unpack uploaded project ZIP and build iOS app
+        script: |
+          set -o pipefail
+          PROJECT_ZIP="$CM_BUILD_DIR/Antys_Save_Editor_iOS_Codemagic.zip"
+          SOURCE_DIR="$CM_BUILD_DIR/unpacked"
+          PROJECT_PATH="$SOURCE_DIR/Antys_Save_Editor_iOS/AntysSaveEditor.xcodeproj"
+          mkdir -p "$CM_BUILD_DIR/build" "$SOURCE_DIR"
+          if [ ! -f "$PROJECT_ZIP" ]; then
+            echo "Missing $PROJECT_ZIP. Upload Antys_Save_Editor_iOS_Codemagic.zip to the repository root."
+            exit 1
+          fi
+          unzip -oq "$PROJECT_ZIP" -d "$SOURCE_DIR"
+          if [ ! -d "$PROJECT_PATH" ]; then
+            echo "Xcode project not found at $PROJECT_PATH"
+            find "$SOURCE_DIR" -maxdepth 4 -name '*.xcodeproj' -print
+            exit 1
+          fi
+          xcodebuild \
+            -project "$PROJECT_PATH" \
+            -scheme "AntysSaveEditor" \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$CM_BUILD_DIR/build/DerivedData" \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build 2>&1 | tee "$CM_BUILD_DIR/build/xcodebuild.log"
+      - name: Package unsigned app as IPA archive
+        script: |
+          set -e
+          APP_PATH="$CM_BUILD_DIR/build/DerivedData/Build/Products/Release-iphoneos/AntysSaveEditor.app"
+          STAGING="$CM_BUILD_DIR/build/ipa-staging"
+          IPA_PATH="$CM_BUILD_DIR/build/AntysSaveEditor-unsigned.ipa"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "Build output not found at: $APP_PATH"
+            exit 1
+          fi
+          rm -rf "$STAGING"
+          mkdir -p "$STAGING/Payload"
+          cp -R "$APP_PATH" "$STAGING/Payload/AntysSaveEditor.app"
+          rm -f "$IPA_PATH"
+          cd "$STAGING"
+          /usr/bin/zip -qry "$IPA_PATH" Payload
+          echo "Created unsigned IPA archive: $IPA_PATH"
+    artifacts:
+      - build/AntysSaveEditor-unsigned.ipa
+      - build/xcodebuild.log
+      - build/DerivedData/Build/Products/Release-iphoneos/AntysSaveEditor.app/**
